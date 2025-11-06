@@ -34,18 +34,14 @@ update_hosts() {
     log "✅ 已更新 hosts: $ip → $alias"
 }
 
-# === 关键修复：彻底清理 cron ===
-clean_cron_entries() {
-    # 删除所有包含 cf_hosts.sh 和 --auto-update 的行（无论路径、参数顺序）
-    # 使用更宽泛但安全的匹配
-    sed -i '/cf_hosts\.sh.*--auto-update/d' /etc/crontabs/root
-    # 再保险：删除任何含 SCRIPT_PATH 的行
+clean_cron_entries() {  
+    sed -i '/cf_hosts\.sh.*--auto-update/d' /etc/crontabs/root    
     sed -i "\|$(echo "$SCRIPT_PATH" | sed 's/[].\/$*+?|(){}[]/\\&/g')|d" /etc/crontabs/root
 }
 
 set_cron() {
     local interval="$1"
-    clean_cron_entries  # 先彻底清理
+    clean_cron_entries 
     if [ "$interval" -gt 0 ]; then
         # 使用固定格式写入
         echo "0 */$interval * * * $SCRIPT_PATH --auto-update" >> /etc/crontabs/root
@@ -148,17 +144,11 @@ EOF
     printf "请选择操作 (0/1/2/3/4): "
 }
 
-# 自动更新模式
 if [ "$1" = "--auto-update" ]; then
     auto_update
     exit 0
 fi
 
-# === 新增：启动时提示用户是否覆盖旧脚本（可选）===
-# 实际上，wget -O 已覆盖，此处不强制删，但确保 cron 干净
-# 如果你想强制删除同名旧脚本（非当前运行实例），可在部署命令中处理
-
-# 主循环
 while true; do
     show_menu
     read -r choice
