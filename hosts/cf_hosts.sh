@@ -1,10 +1,9 @@
 #!/bin/sh
 
-
 HOSTS_FILE="/etc/hosts"
 SCRIPT_PATH="/root/cf_hosts.sh"
 CONFIG_FILE="/root/cf_hosts.conf"
-MARKER="# auto_hosts managed"
+MARKER="# cf_hosts managed"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
@@ -35,10 +34,20 @@ update_hosts() {
     log "✅ 已更新 hosts: $ip → $alias"
 }
 
+# === 关键修复：彻底清理 cron ===
+clean_cron_entries() {
+    # 删除所有包含 cf_hosts.sh 和 --auto-update 的行（无论路径、参数顺序）
+    # 使用更宽泛但安全的匹配
+    sed -i '/cf_hosts\.sh.*--auto-update/d' /etc/crontabs/root
+    # 再保险：删除任何含 SCRIPT_PATH 的行
+    sed -i "\|$(echo "$SCRIPT_PATH" | sed 's/[].\/$*+?|(){}[]/\\&/g')|d" /etc/crontabs/root
+}
+
 set_cron() {
     local interval="$1"
-    sed -i '/auto_hosts\.sh.*--auto-update/d' /etc/crontabs/root
+    clean_cron_entries  # 先彻底清理
     if [ "$interval" -gt 0 ]; then
+        # 使用固定格式写入
         echo "0 */$interval * * * $SCRIPT_PATH --auto-update" >> /etc/crontabs/root
         /etc/init.d/cron restart >/dev/null 2>&1
         log "⏰ 定时任务已设置：每 $interval 小时更新一次。"
@@ -50,39 +59,36 @@ set_cron() {
 
 auto_update() {
     if [ ! -f "$CONFIG_FILE" ]; then
-        logger -t auto_hosts "配置文件不存在，跳过自动更新。"
+        logger -t cf_hosts "配置文件不存在，跳过自动更新。"
         exit 0
     fi
     . "$CONFIG_FILE"
     if [ -z "$TARGET_DOMAIN" ] || [ -z "$LOCAL_ALIAS" ] || [ -z "$RECORD_TYPE" ]; then
-        logger -t auto_hosts "配置不完整，跳过。"
+        logger -t cf_hosts "配置不完整，跳过。"
         exit 1
     fi
     IP=$(resolve_ip "$TARGET_DOMAIN" "$RECORD_TYPE")
     if [ -z "$IP" ]; then
-        logger -t auto_hosts "解析失败：$TARGET_DOMAIN"
+        logger -t cf_hosts "解析失败：$TARGET_DOMAIN"
         exit 1
     fi
     update_hosts "$IP" "$LOCAL_ALIAS"
     reload_dns
-    logger -t auto_hosts "自动更新完成: $IP → $LOCAL_ALIAS"
+    logger -t cf_hosts "自动更新完成: $IP → $LOCAL_ALIAS"
 }
 
 uninstall() {
     printf "⚠️  此操作将执行以下动作：\n"
-    printf "   • 删除定时任务\n"
-    printf "   • 清理 /etc/hosts 中相关条目\n"
+    printf "   • 删除所有相关定时任务\n"
+    printf "   • 清理 /etc/hosts 中条目\n"
     printf "   • 删除配置文件和本脚本\n"
-    printf "   • 无法撤销！\n"
     printf "是否确认完全卸载？(y/N): "
     read -r confirm
     case "$confirm" in
         [yY]|[yY][eE][sS])
-            # 删除 cron
-            sed -i '/auto_hosts\.sh.*--auto-update/d' /etc/crontabs/root
+            clean_cron_entries
             /etc/init.d/cron restart >/dev/null 2>&1
 
-            # 删除 hosts 条目
             if [ -f "$CONFIG_FILE" ]; then
                 . "$CONFIG_FILE"
                 if [ -n "$LOCAL_ALIAS" ]; then
@@ -91,13 +97,10 @@ uninstall() {
             fi
             sed -i "\|$MARKER|d" "$HOSTS_FILE"
 
-            # 删除配置
             rm -f "$CONFIG_FILE"
-
             log "🧹 正在清理..."
             reload_dns
 
-            # 自删除（关键：用 exec + sh -c 避免 busy）
             exec sh -c "rm -f '$SCRIPT_PATH'; log '✅ 完全卸载完成。'"
             ;;
         *)
@@ -111,7 +114,7 @@ show_menu() {
     cat <<EOF
 ==========================================
   OpenWrt 优选域名本地解析管理工具
-==========================================  
+========================================== 
   1. 优选域名本地解析
   2. 修改定时解析周期
   3. 取消定时解析任务
@@ -126,7 +129,6 @@ EOF
         echo "  当前本地别名: ${LOCAL_ALIAS:-无}"
         echo "  解析类型:     ${RECORD_TYPE:-无}"
 
-        # 正确解析定时周期
         CRON_ENTRY=$(grep -F "$SCRIPT_PATH --auto-update" /etc/crontabs/root 2>/dev/null)
         if [ -n "$CRON_ENTRY" ]; then
             COL2=$(echo "$CRON_ENTRY" | awk '{print $2}')
@@ -134,7 +136,7 @@ EOF
                 INTERVAL=$(echo "$COL2" | cut -d'/' -f2)
                 echo "  定时周期:     每 ${INTERVAL} 小时"
             else
-                echo "  定时周期:     自定义格式（非标准 */N）"
+                echo "  定时周期:     自定义格式"
             fi
         else
             echo "  定时周期:     未设置"
@@ -146,13 +148,17 @@ EOF
     printf "请选择操作 (0/1/2/3/4): "
 }
 
-# 自动更新模式（供 cron 调用）
+# 自动更新模式
 if [ "$1" = "--auto-update" ]; then
     auto_update
     exit 0
 fi
 
-# 主交互循环
+# === 新增：启动时提示用户是否覆盖旧脚本（可选）===
+# 实际上，wget -O 已覆盖，此处不强制删，但确保 cron 干净
+# 如果你想强制删除同名旧脚本（非当前运行实例），可在部署命令中处理
+
+# 主循环
 while true; do
     show_menu
     read -r choice
@@ -163,7 +169,7 @@ while true; do
             exit 0
             ;;
         1)
-            printf "请输入优选域名: "
+            printf "请输入要解析的优选域名: "
             read -r TARGET_DOMAIN
             [ -z "$TARGET_DOMAIN" ] && { log "❌ 域名不能为空。"; continue; }
 
