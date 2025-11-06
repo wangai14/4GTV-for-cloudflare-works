@@ -3,17 +3,16 @@
 HOSTS_FILE="/etc/hosts"
 SCRIPT_PATH="/root/cf_hosts.sh"
 CONFIG_FILE="/root/cf_hosts.conf"
+MARKER="# auto_hosts managed"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
-# 刷新 dnsmasq
 reload_dns() {
-    /etc/init.d/dnsmasq restart >/dev/null 2>&1 && log "dnsmasq 已重启，DNS 缓存已刷新。"
+    /etc/init.d/dnsmasq restart >/dev/null 2>&1 && log "dnsmasq 已重启。"
 }
 
-# 获取 IP 地址（支持 A / AAAA）
 resolve_ip() {
     local domain="$1"
     local type="$2"
@@ -26,79 +25,109 @@ resolve_ip() {
     echo "$ip"
 }
 
-# 写入 hosts
 update_hosts() {
     local ip="$1"
     local alias="$2"
     cp "$HOSTS_FILE" "${HOSTS_FILE}.bak"
-    sed -i "/[[:space:]]$alias\$/d" "$HOSTS_FILE"
-    echo "$ip    $alias" >> "$HOSTS_FILE"
+    # 先删除旧条目（带标记或匹配别名）
+    sed -i "/[[:space:]]$alias\($\|[[:space:]]\)/d" "$HOSTS_FILE"
+    # 添加新条目并打标记
+    echo "$ip    $alias    $MARKER" >> "$HOSTS_FILE"
     log "✅ 已更新 hosts: $ip → $alias"
 }
 
-# 设置定时任务（小时数）
 set_cron() {
-    local interval="$1"  # 单位：小时
-    local cron_line="0 */$interval * * * $SCRIPT_PATH --auto-update"
-
-    # 删除旧 cron 条目
-    sed -i '/auto_hosts\.sh/d' /etc/crontabs/root
-
-    # 添加新条目（仅当 interval > 0）
+    local interval="$1"
+    sed -i '/auto_hosts\.sh.*--auto-update/d' /etc/crontabs/root
     if [ "$interval" -gt 0 ]; then
-        echo "$cron_line" >> /etc/crontabs/root
-        log "⏰ 定时任务已设置：每 $interval 小时自动更新一次。"
+        echo "0 */$interval * * * $SCRIPT_PATH --auto-update" >> /etc/crontabs/root
+        /etc/init.d/cron restart >/dev/null 2>&1
+        log "⏰ 定时任务已设置：每 $interval 小时更新一次。"
     else
+        /etc/init.d/cron restart >/dev/null 2>&1
         log "🔕 定时任务已清除。"
     fi
-
-    /etc/init.d/cron restart >/dev/null 2>&1
 }
 
-# 自动更新模式（由 cron 调用）
 auto_update() {
     if [ ! -f "$CONFIG_FILE" ]; then
         logger -t auto_hosts "配置文件不存在，跳过自动更新。"
         exit 0
     fi
-
     . "$CONFIG_FILE"
     if [ -z "$TARGET_DOMAIN" ] || [ -z "$LOCAL_ALIAS" ] || [ -z "$RECORD_TYPE" ]; then
-        logger -t auto_hosts "配置不完整，跳过自动更新。"
+        logger -t auto_hosts "配置不完整，跳过。"
         exit 1
     fi
-
     IP=$(resolve_ip "$TARGET_DOMAIN" "$RECORD_TYPE")
     if [ -z "$IP" ]; then
-        logger -t auto_hosts "无法解析 $TARGET_DOMAIN，跳过更新。"
+        logger -t auto_hosts "解析失败：$TARGET_DOMAIN"
         exit 1
     fi
-
     update_hosts "$IP" "$LOCAL_ALIAS"
     reload_dns
-    logger -t auto_hosts "自动更新完成: $TARGET_DOMAIN ($RECORD_TYPE) → $IP → $LOCAL_ALIAS"
+    logger -t auto_hosts "自动更新完成: $IP → $LOCAL_ALIAS"
 }
 
-# 主菜单
+uninstall() {
+    printf "⚠️  此操作将执行以下动作：\n"
+    printf "   • 删除定时任务\n"
+    printf "   • 清理 /etc/hosts 中相关条目\n"
+    printf "   • 删除配置文件和本脚本\n"
+    printf "   • 无法撤销！\n"
+    printf "是否确认完全卸载？(y/N): "
+    read -r confirm
+    case "$confirm" in
+        [yY]|[yY][eE][sS])
+            # 1. 删除 cron
+            sed -i '/auto_hosts\.sh.*--auto-update/d' /etc/crontabs/root
+            /etc/init.d/cron restart >/dev/null 2>&1
+
+            # 2. 删除 hosts 条目（带标记 或 匹配 LOCAL_ALIAS）
+            if [ -f "$CONFIG_FILE" ]; then
+                . "$CONFIG_FILE"
+                if [ -n "$LOCAL_ALIAS" ]; then
+                    sed -i "/[[:space:]]$LOCAL_ALIAS\($\|[[:space:]]\)/d" "$HOSTS_FILE"
+                fi
+            fi
+            # 也尝试按标记删除（双重保险）
+            sed -i "\|$MARKER|d" "$HOSTS_FILE"
+
+            # 3. 删除配置文件
+            rm -f "$CONFIG_FILE"
+
+            # 4. 删除脚本自身（延迟执行）
+            log "🧹 正在清理..."
+            reload_dns
+
+            # 自删除（必须用 exec + sh -c，否则会报“Text file busy”）
+            exec sh -c "rm -f '$SCRIPT_PATH'; log '✅ 完全卸载完成。'"
+            ;;
+        *)
+            log "❌ 卸载已取消。"
+            ;;
+    esac
+}
+
 show_menu() {
     clear
     cat <<EOF
 ==========================================
   OpenWrt 优选域名本地解析管理工具
-==========================================
+==========================================  
   1. 优选域名本地解析
   2. 修改定时解析周期
   3. 取消定时解析任务
+  4. 完全卸载（删除任务+配置+脚本）
+  0. 退出脚本
 ------------------------------------------
-  当前配置文件: $CONFIG_FILE
 EOF
 
     if [ -f "$CONFIG_FILE" ]; then
         . "$CONFIG_FILE" 2>/dev/null
-        echo "  优选域名: ${TARGET_DOMAIN:-无}"
-        echo "  本地域名: ${LOCAL_ALIAS:-无}"
+        echo "  当前目标域名: ${TARGET_DOMAIN:-无}"
+        echo "  当前本地别名: ${LOCAL_ALIAS:-无}"
         echo "  解析类型:     ${RECORD_TYPE:-无}"
-        # 尝试从 crontab 获取周期
         CRON_ENTRY=$(grep -F "$SCRIPT_PATH --auto-update" /etc/crontabs/root 2>/dev/null)
         if [ -n "$CRON_ENTRY" ]; then
             INTERVAL=$(echo "$CRON_ENTRY" | awk -F'[*/]' '{print $2}' | awk '{print $1}')
@@ -110,53 +139,46 @@ EOF
         echo "  当前状态:     未配置"
     fi
     echo "=========================================="
-    printf "请选择操作 (1/2/3): "
+    printf "请选择操作 (0/1/2/3/4): "
 }
 
-# === 主程序入口 ===
-
-# 如果带有 --auto-update 参数，则执行自动更新（供 cron 调用）
+# 自动更新模式
 if [ "$1" = "--auto-update" ]; then
     auto_update
     exit 0
 fi
 
-# 显示菜单并处理用户选择
+# 主循环
 while true; do
     show_menu
     read -r choice
 
     case "$choice" in
+        0)
+            log "👋 再见！"
+            exit 0
+            ;;
         1)
-            # 重新设置解析任务
-            printf "请输入要解析的优选域名 (例如: cdn.example.com): "
+            printf "请输入要解析的优选域名: "
             read -r TARGET_DOMAIN
             [ -z "$TARGET_DOMAIN" ] && { log "❌ 域名不能为空。"; continue; }
 
-            printf "请选择解析类型:\n  1) IPv4 (A 记录)\n  2) IPv6 (AAAA 记录)\n请选择 (1/2): "
+            printf "解析类型:\n  1) IPv4\n  2) IPv6\n请选择: "
             read -r rt_choice
             RECORD_TYPE="A"
             [ "$rt_choice" = "2" ] && RECORD_TYPE="AAAA"
 
             IP=$(resolve_ip "$TARGET_DOMAIN" "$RECORD_TYPE")
-            if [ -z "$IP" ]; then
-                log "❌ 无法解析 $TARGET_DOMAIN 的 $RECORD_TYPE 记录，请检查网络或域名。"
-                continue
-            fi
-
+            [ -z "$IP" ] && { log "❌ 解析失败，请检查域名或网络。"; continue; }
             log "🔍 解析成功: $TARGET_DOMAIN → $IP"
-
-            # 后台 ping 触发缓存（可选）
             ping -c 1 -W 1 "$IP" >/dev/null 2>&1 &
 
-            printf "请输入映射到该 IP 的本地域名 (例如: my.cdn): "
+            printf "请输入本地别名域名: "
             read -r LOCAL_ALIAS
             [ -z "$LOCAL_ALIAS" ] && { log "❌ 本地域名不能为空。"; continue; }
 
-            # 更新 hosts
             update_hosts "$IP" "$LOCAL_ALIAS"
 
-            # 保存配置
             cat > "$CONFIG_FILE" <<EOF
 TARGET_DOMAIN="$TARGET_DOMAIN"
 RECORD_TYPE="$RECORD_TYPE"
@@ -164,45 +186,46 @@ LOCAL_ALIAS="$LOCAL_ALIAS"
 EOF
 
             reload_dns
-
-            # 默认设置每 3 小时
             set_cron 3
-
-            log "✅ 域名解析配置已更新！"
+            log "✅ 配置完成！"
             read -p "按回车返回主菜单..."
             ;;
 
         2)
             if [ ! -f "$CONFIG_FILE" ]; then
-                log "⚠️  尚未设置域名解析任务，请先选择选项 1。"
-                read -p "按回车返回..."
+                log "⚠️  请先设置解析任务（选项 1）。"
+                read -p "按回车继续..."
                 continue
             fi
-
-            printf "当前定时任务将被修改。\n请输入新的解析间隔（单位：小时，例如 1、2、6、12）: "
+            printf "请输入新的定时间隔（小时，≥1）: "
             read -r hours
             case "$hours" in
                 ''|*[!0-9]*)
-                    log "❌ 请输入有效的正整数。"
+                    log "❌ 请输入有效数字。"
                     ;;
                 *)
                     if [ "$hours" -lt 1 ]; then
-                        log "❌ 间隔必须 ≥1 小时。"
+                        log "❌ 间隔不能小于 1 小时。"
                     else
                         set_cron "$hours"
-                        read -p "按回车返回主菜单..."
                     fi
                     ;;
             esac
-            ;;
-
-        3)
-            set_cron 0  # 0 表示清除
             read -p "按回车返回主菜单..."
             ;;
 
+        3)
+            set_cron 0
+            read -p "按回车返回主菜单..."
+            ;;
+
+        4)
+            uninstall
+            exit 0  # uninstall 中已自删，但保险起见仍 exit
+            ;;
+
         *)
-            log "❌ 无效选项，请输入 1、2 或 3。"
+            log "❌ 无效选项。"
             read -p "按回车继续..."
             ;;
     esac
