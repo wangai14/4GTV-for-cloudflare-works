@@ -103,7 +103,7 @@ fi
 }
 
 nf6(){
-UA_Browser="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36"
+UA_Browser="Mozilla/50 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36"
 result=$(curl -6fsL --user-agent "${UA_Browser}" --write-out %{http_code} --output /dev/null --max-time 10 "https://www.netflix.com/title/70143836" 2>&1)
 if [[ "$result" == "404" ]]; then 
 NF="遗憾，当前IP仅解锁Netflix自制剧"
@@ -535,7 +535,7 @@ sleep 2 && ShowSOCKS5 && S5menu
 }
 
 SOCKS5WARPPORT(){
-[[ ! $(type -P warp-cli) ]] && red "未安装Socks5-WARP(+)，无法更改端口" && exit
+[[ ! $(type -P warp-cli) ]] && red "未安装Socks5-WARP(+)s，无法更改端口" && exit
 readp "请输入自定义socks5端口[2000～65535]（回车跳过为2000-65535之间的随机端口）:" port
 if [[ -z $port ]]; then
 port=$(shuf -i 2000-65535 -n 1)
@@ -831,4 +831,410 @@ docker && checkwgcf
 if [[ ! $wgcfv4 =~ on|plus && ! $wgcfv6 =~ on|plus ]]; then
 v4v6
 if [[ -n $v4 && -n $v6 ]]; then
-green "当前原生v4+v6双栈vps首次安装warp-go\n现添加WARP IPV4+IPV6（IP出站表现：WARP双栈 IP
+green "当前原生v4+v6双栈vps首次安装warp-go\n现添加WARP IPV4+IPV6（IP出站表现：WARP双栈 IP）" && sleep 2
+wpgo1=$wgo3 && wpgo2=$wgo4 && wpgo3=$wgo8 && WGCFins
+fi
+if [[ -n $v6 && -z $v4 ]]; then
+green "当前原生v6单栈vps首次安装warp-go\n现添加WARP IPV4+IPV6（IP出站表现：WARP IPV6 + WARP IPV4）" && sleep 2
+wpgo1=$wgo3 && wpgo2=$wgo5 && wpgo3=$wgo7 && nat4 && WGCFins
+fi
+if [[ -z $v6 && -n $v4 ]]; then
+green "当前原生v4单栈vps首次安装warp-go\n现添加WARP IPV4+IPV6（IP出站表现：WARP IPV4 + WARP IPV6）" && sleep 2
+wpgo1=$wgo3 && wpgo2=$wgo4 && wpgo3=$wgo6 && WGCFins
+fi
+echo 'w46' > /root/warpip/wp.log && xyz && WGCFmenu
+first4
+else
+kill -15 $(pgrep warp-go) >/dev/null 2>&1
+sleep 2 && v4v6
+if [[ -n $v4 && -n $v6 ]]; then
+green "当前原生v4+v6双栈vps已安装warp-go\n现快速切换WARP IPV4+IPV6（IP出站表现：WARP双栈 IP）" && sleep 2
+wpgo1=$wgo3 && ABC
+fi
+if [[ -n $v6 && -z $v4 ]]; then
+green "当前原生v6单栈vps已安装warp-go\n现快速切换WARP IPV4+IPV6（IP出站表现：WARP IPV6 + WARP IPV4）" && sleep 2
+wpgo1=$wgo3 && ABC
+fi
+if [[ -z $v6 && -n $v4 ]]; then
+green "当前原生v4单栈vps已安装warp-go\n现快速切换WARP IPV4+IPV6（IP出站表现：WARP IPV4 + WARP IPV6）" && sleep 2
+wpgo1=$wgo3 && ABC
+fi
+echo 'w46' > /root/warpip/wp.log
+cat /usr/local/bin/warp.conf && sleep 2
+CheckWARP && first4 && ShowWGCF && WGCFmenu
+fi
+}
+
+ABC(){
+sed -i '/AllowedIPs/d' /usr/local/bin/warp.conf && sed -i '/PostUp/d' /usr/local/bin/warp.conf && sed -i '/PostDown/d' /usr/local/bin/warp.conf
+eval $wpgo1
+if [[ -n $v6 && -z $v4 ]]; then
+eval $wgo7
+elif [[ -z $v6 && -n $v4 ]]; then
+eval $wgo6
+elif [[ -n $v4 && -n $v6 ]]; then
+eval $wgo8
+fi
+}
+
+ABCwgcf(){
+sed -i '/AllowedIPs/d' /etc/wireguard/wgcf.conf && sed -i '/PostUp/d' /etc/wireguard/wgcf.conf && sed -i '/PostDown/d' /etc/wireguard/wgcf.conf
+eval $wpgo1
+if [[ -n $v6 && -z $v4 ]]; then
+eval $wgc7
+elif [[ -z $v6 && -n $v4 ]]; then
+eval $wgc6
+elif [[ -n $v4 && -n $v6 ]]; then
+eval $wgc8
+fi
+}
+
+CWG(){
+if [[ -e /etc/wireguard/wgcf.conf ]]; then
+wg-quick down wgcf >/dev/null 2>&1
+systemctl stop wg-quick@wgcf >/dev/null 2>&1
+systemctl disable wg-quick@wgcf >/dev/null 2>&1
+rm -rf /etc/wireguard/wgcf.conf /etc/wireguard/wgcf.conf.d /usr/bin/wg-quick /usr/bin/wg /usr/local/bin/wgcf /etc/init.d/wireguard
+fi
+if [[ -n $(type -P warp-go) ]]; then
+kill -15 $(pgrep warp-go) >/dev/null 2>&1
+systemctl stop warp-go >/dev/null 2>&1
+systemctl disable warp-go >/dev/null 2>&1
+rm -rf /usr/local/bin/warp-go /usr/local/bin/warp.conf /etc/systemd/system/warp-go.service /usr/bin/wireguard /etc/init.d/wireguard
+fi
+if [[ -e /etc/gai.conf ]]; then
+sed -i '/precedence ::ffff:0:0\/96  100/d' /etc/gai.conf
+fi
+unreswarp
+}
+
+WGCFins(){
+CWG
+cpujg
+yellow "开始安装 warp-go" && sleep 1
+cd /usr/local/bin
+wget -N --no-check-certificate https://gitlab.com/rwkgyg/CFwarp/-/raw/main/warp-go/warp-go-$cpu >/dev/null 2>&1
+chmod +x warp-go-$cpu && mv warp-go-$cpu warp-go
+warp-go -config /usr/local/bin/warp.conf -init
+rm -rf /usr/local/bin/warp-go
+eval $wpgo2
+eval $wpgo3
+mtuwarp
+sed -i '/MTU/d' /usr/local/bin/warp.conf
+sed -i "/\[Interface\]/a MTU = $MTU" /usr/local/bin/warp.conf
+yellow "开始配置 warp-go" && sleep 1
+cat > /etc/systemd/system/warp-go.service <<- EOF
+[Unit]
+Description=Warp-go Client
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/warp-go -config /usr/local/bin/warp.conf
+Restart=always
+[Install]
+WantedBy=multi-user.target
+EOF
+chmod +x /usr/local/bin/warp-go
+systemctl daemon-reload
+CheckWARP
+}
+
+WGCF(){
+yellow "稍等3秒，检测VPS内warp环境"
+docker && checkwgcf
+if [[ ! $wgcfv4 =~ on|plus && ! $wgcfv6 =~ on|plus ]]; then
+v4v6
+if [[ -n $v4 && -n $v6 ]]; then
+green "当前原生v4+v6双栈vps首次安装wgcf\n现添加WARP IPV4+IPV6（IP出站表现：WARP双栈 IP）" && sleep 2
+wpgo1=$wgc3 && wpgo2=$wgc8 && WGCFinswgcf
+fi
+if [[ -n $v6 && -z $v4 ]]; then
+green "当前原生v6单栈vps首次安装wgcf\n现添加WARP IPV6（IP出站表现：仅WARP IPV6）" && sleep 2
+wpgo1=$wgc2 && wpgo2=$wgc7 && WGCFinswgcf
+fi
+if [[ -z $v6 && -n $v4 ]]; then
+green "当前原生v4单栈vps首次安装wgcf\n现添加WARP IPV4（IP出站表现：仅WARP IPV4）" && sleep 2
+wpgo1=$wgc1 && wpgo2=$wgc6 && WGCFinswgcf
+fi
+echo 'w46' > /root/warpip/wp.log && xyz && WGCFmenu
+first4
+else
+wg-quick down wgcf >/dev/null 2>&1
+sleep 2 && v4v6
+if [[ -n $v4 && -n $v6 ]]; then
+green "当前原生v4+v6双栈vps已安装wgcf\n现快速切换WARP IPV4+IPV6（IP出站表现：WARP双栈 IP）" && sleep 2
+wpgo1=$wgc3 && ABCwgcf
+fi
+if [[ -n $v6 && -z $v4 ]]; then
+green "当前原生v6单栈vps已安装wgcf\n现快速切换WARP IPV6（IP出站表现：仅WARP IPV6）" && sleep 2
+wpgo1=$wgc2 && ABCwgcf
+fi
+if [[ -z $v6 && -n $v4 ]]; then
+green "当前原生v4单栈vps已安装wgcf\n现快速切换WARP IPV4（IP出站表现：仅WARP IPV4）" && sleep 2
+wpgo1=$wgc1 && ABCwgcf
+fi
+echo 'w46' > /root/warpip/wp.log
+cat /etc/wireguard/wgcf.conf && sleep 2
+CheckWARPwgcf && first4 && ShowWGCF && WGCFmenu
+fi
+}
+
+WGCFv4wgcf(){
+yellow "稍等3秒，检测VPS内warp环境"
+docker && checkwgcf
+if [[ ! $wgcfv4 =~ on|plus && ! $wgcfv6 =~ on|plus ]]; then
+v4v6
+if [[ -n $v4 && -n $v6 ]]; then
+green "当前原生v4+v6双栈vps首次安装wgcf\n现添加WARP IPV4（IP出站表现：原生 IPV6 + WARP IPV4）" && sleep 2
+wpgo1=$wgc1 && wpgo2=$wgc8 && WGCFinswgcf
+fi
+if [[ -n $v6 && -z $v4 ]]; then
+green "当前原生v6单栈vps首次安装wgcf\n现添加WARP IPV4（IP出站表现：原生 IPV6 + WARP IPV4）" && sleep 2
+wpgo1=$wgc1 && wpgo2=$wgc7 && WGCFinswgcf
+fi
+if [[ -z $v6 && -n $v4 ]]; then
+green "当前原生v4单栈vps首次安装wgcf\n现添加WARP IPV4（IP出站表现：仅WARP IPV4）" && sleep 2
+wpgo1=$wgc1 && wpgo2=$wgc6 && WGCFinswgcf
+fi
+echo 'w4' > /root/warpip/wp.log && xyz && WGCFmenu
+first4
+else
+wg-quick down wgcf >/dev/null 2>&1
+sleep 2 && v4v6
+if [[ -n $v4 && -n $v6 ]]; then
+green "当前原生v4+v6双栈vps已安装wgcf\n现快速切换WARP IPV4（IP出站表现：原生 IPV6 + WARP IPV4）" && sleep 2
+wpgo1=$wgc1 && ABCwgcf
+fi
+if [[ -n $v6 && -z $v4 ]]; then
+green "当前原生v6单栈vps已安装wgcf\n现快速切换WARP IPV4（IP出站表现：原生 IPV6 + WARP IPV4）" && sleep 2
+wpgo1=$wgc1 && ABCwgcf
+fi
+if [[ -z $v6 && -n $v4 ]]; then
+green "当前原生v4单栈vps已安装wgcf\n现快速切换WARP IPV4（IP出站表现：仅WARP IPV4）" && sleep 2
+wpgo1=$wgc1 && ABCwgcf
+fi
+echo 'w4' > /root/warpip/wp.log
+cat /etc/wireguard/wgcf.conf && sleep 2
+CheckWARPwgcf && first4 && ShowWGCF && WGCFmenu
+fi
+}
+
+WGCFv6wgcf(){
+yellow "稍等3秒，检测VPS内warp环境"
+docker && checkwgcf
+if [[ ! $wgcfv4 =~ on|plus && ! $wgcfv6 =~ on|plus ]]; then
+v4v6
+if [[ -n $v4 && -n $v6 ]]; then
+green "当前原生v4+v6双栈vps首次安装wgcf\n现添加WARP IPV6（IP出站表现：原生 IPV4 + WARP IPV6）" && sleep 2
+wpgo1=$wgc2 && wpgo2=$wgc8 && WGCFinswgcf
+fi
+if [[ -n $v6 && -z $v4 ]]; then
+green "当前原生v6单栈vps首次安装wgcf\n现添加WARP IPV6（IP出站表现：仅WARP IPV6）" && sleep 2
+wpgo1=$wgc2 && wpgo2=$wgc7 && WGCFinswgcf
+fi
+if [[ -z $v6 && -n $v4 ]]; then
+green "当前原生v4单栈vps首次安装wgcf\n现添加WARP IPV6（IP出站表现：原生 IPV4 + WARP IPV6）" && sleep 2
+wpgo1=$wgc2 && wpgo2=$wgc6 && WGCFinswgcf
+fi
+echo 'w6' > /root/warpip/wp.log && xyz && WGCFmenu
+first4
+else
+wg-quick down wgcf >/dev/null 2>&1
+sleep 2 && v4v6
+if [[ -n $v4 && -n $v6 ]]; then
+green "当前原生v4+v6双栈vps已安装wgcf\n现快速切换WARP IPV6（IP出站表现：原生 IPV4 + WARP IPV6）" && sleep 2
+wpgo1=$wgc2 && ABCwgcf
+fi
+if [[ -n $v6 && -z $v4 ]]; then
+green "当前原生v6单栈vps已安装wgcf\n现快速切换WARP IPV6（IP出站表现：仅WARP IPV6）" && sleep 2
+wpgo1=$wgc2 && ABCwgcf
+fi
+if [[ -z $v6 && -n $v4 ]]; then
+green "当前原生v4单栈vps已安装wgcf\n现快速切换WARP IPV6（IP出站表现：原生 IPV4 + WARP IPV6）" && sleep 2
+wpgo1=$wgc2 && ABCwgcf
+fi
+echo 'w6' > /root/warpip/wp.log
+cat /etc/wireguard/wgcf.conf && sleep 2
+CheckWARPwgcf && first4 && ShowWGCF && WGCFmenu
+fi
+}
+
+cwg(){
+if [[ -e /etc/wireguard/wgcf.conf ]]; then
+wg-quick down wgcf >/dev/null 2>&1
+systemctl stop wg-quick@wgcf >/dev/null 2>&1
+systemctl disable wg-quick@wgcf >/dev/null 2>&1
+rm -rf /etc/wireguard/wgcf.conf /etc/wireguard/wgcf.conf.d /usr/bin/wg-quick /usr/bin/wg /usr/local/bin/wgcf /etc/init.d/wireguard
+fi
+if [[ -n $(type -P warp-go) ]]; then
+kill -15 $(pgrep warp-go) >/dev/null 2>&1
+systemctl stop warp-go >/dev/null 2>&1
+systemctl disable warp-go >/dev/null 2>&1
+rm -rf /usr/local/bin/warp-go /usr/local/bin/warp.conf /etc/systemd/system/warp-go.service /usr/bin/wireguard /etc/init.d/wireguard
+fi
+if [[ -e /etc/gai.conf ]]; then
+sed -i '/precedence ::ffff:0:0\/96  100/d' /etc/gai.conf
+fi
+unreswarp
+}
+
+WGCFinswgcf(){
+cwg
+cpujg
+yellow "开始安装 wgcf" && sleep 1
+cd /usr/local/bin
+wget -N --no-check-certificate https://gitlab.com/rwkgyg/CFwarp/-/raw/main/wgcf/wgcf_$cpu >/dev/null 2>&1
+chmod +x wgcf_$cpu && mv wgcf_$cpu wgcf
+if [[ $release = Centos ]]; then
+$yumapt install wireguard-tools
+else
+$yumapt install wireguard-tools -y
+fi
+wgcf register
+wgcf generate
+mv wgcf-profile.conf /etc/wireguard/wgcf.conf
+sed -i "s#Endpoint = 162.159.193.1:2408#Endpoint = $endpoint#g" /etc/wireguard/wgcf.conf
+eval $wpgo1
+eval $wpgo2
+mtuwarp
+sed -i '/MTU/d' /etc/wireguard/wgcf.conf
+sed -i "/\[Interface\]/a MTU = $MTU" /etc/wireguard/wgcf.conf
+yellow "开始配置 wgcf" && sleep 1
+CheckWARPwgcf
+}
+
+CheckWARPwgcf(){
+i=0
+while [ $i -le 9 ]; do let i++
+yellow "共执行10次，第$i次获取warp的IP中……"
+wg-quick down wgcf >/dev/null 2>&1
+systemctl enable wg-quick@wgcf >/dev/null 2>&1
+systemctl start wg-quick@wgcf >/dev/null 2>&1
+systemctl restart wg-quick@wgcf >/dev/null 2>&1
+checkwgcf
+if [[ $wgcfv4 =~ on|plus || $wgcfv6 =~ on|plus ]]; then
+green "恭喜！warp的IP获取成功！" && dns
+break
+else
+red "遗憾！warp的IP获取失败"
+fi
+done
+if [[ ! $wgcfv4 =~ on|plus && ! $wgcfv6 =~ on|plus ]]; then
+red "安装WARP失败，还原VPS，卸载WARP"
+cwg
+echo
+[[ $release = Centos && ${vsid} -lt 7 ]] && yellow "当前系统版本号：Centos $vsid \n建议使用 Centos 7 以上系统 " 
+[[ $release = Ubuntu && ${vsid} -lt 18 ]] && yellow "当前系统版本号：Ubuntu $vsid \n建议使用 Ubuntu 18 以上系统 " 
+[[ $release = Debian && ${vsid} -lt 10 ]] && yellow "当前系统版本号：Debian $vsid \n建议使用 Debian 10 以上系统 "
+yellow "提示："
+red "你或许可以使用方案二或方案三来实现WARP"
+red "也可以选择WARP-GO核心来安装WARP方案一"
+exit
+else 
+green "ok"
+fi
+}
+
+dns(){
+if [[ $release = Centos ]]; then
+if [[ ${vsid} -lt 7 ]]; then
+yellow "当前系统版本号：Centos $vsid \n请设置默认warp DNS： 1.1.1.1 1.0.0.1 2606:4700:4700::1111 2606:4700:4700::1001"
+elif [[ ${vsid} -ge 7 ]]; then
+chattr -i /etc/resolv.conf
+echo -e "nameserver 1.1.1.1\nnameserver 1.0.0.1\nnameserver 2606:4700:4700::1111\nnameserver 2606:4700:4700::1001" > /etc/resolv.conf
+fi
+elif [[ $release = Ubuntu ]]; then
+if [[ ${vsid} -ge 18 ]]; then
+$yumapt install resolvconf
+systemctl start resolvconf
+systemctl enable resolvconf
+echo -e "nameserver 1.1.1.1\nnameserver 1.0.0.1\nnameserver 2606:4700:4700::1111\nnameserver 2606:4700:4700::1001" > /etc/resolvconf/resolv.conf.d/head
+resolvconf -u
+else
+yellow "当前系统版本号：Ubuntu $vsid \n请设置默认warp DNS： 1.1.1.1 1.0.0.1 2606:4700:4700::1111 2606:4700:4700::1001"
+fi
+elif [[ $release = Debian ]]; then
+if [[ ${vsid} -ge 10 ]]; then
+chattr -i /etc/resolv.conf
+echo -e "nameserver 1.1.1.1\nnameserver 1.0.0.1\nnameserver 2606:4700:4700::1111\nnameserver 2606:4700:4700::1001" > /etc/resolv.conf
+else
+yellow "当前系统版本号：Debian $vsid \n请设置默认warp DNS： 1.1.1.1 1.0.0.1 2606:4700:4700::1111 2606:4700:4700::1001"
+fi
+fi
+}
+
+main(){
+v4v6 && tun && ShowWGCF && ShowSOCKS5
+warpip
+cfwarpshow
+white "-----------------------------------------------"
+blue " 1. 方案一：一键安装WARP-GO WARP IPV4（IP出站表现：原生 IPV6 + WARP IPV4）"
+blue " 2. 方案一：一键安装WARP-GO WARP IPV6（IP出站表现：原生 IPV4 + WARP IPV6）"
+blue " 3. 方案一：一键安装WARP-GO WARP IPV4+IPV6（IP出站表现：WARP双栈 IP）"
+white "-----------------------------------------------"
+blue " 4. 方案二：一键安装Socks5-WARP 官方客户端 (支持VPS无IPV4地址，但不支持纯IPV6地址)"
+white "-----------------------------------------------"
+blue " 5. 方案三：WG-PROXY IPV6/IPV4"
+white "-----------------------------------------------"
+blue " 6. WARP+账户升级（方案一/方案二）"
+blue " 7. 卸载WARP相关所有方案"
+blue " 8. WARP工具箱"
+blue " 9. 升级CFwarp脚本"
+white "-----------------------------------------------"
+blue " 10. 切换到wgcf核心，安装方案一"
+blue " 11. 切换到wgcf核心，安装方案一WARP IPV4"
+blue " 12. 切换到wgcf核心，安装方案一WARP IPV6"
+white "-----------------------------------------------"
+red " 0. 退出"
+readp "请选择：" num
+case "$num" in
+1 ) ONEWARPGO && WGCFv4;;
+2 ) ONEWARPGO && WGCFv6;;
+3 ) ONEWARPGO && WGCFv4v6;;
+4 ) SOCKS5ins;;
+5 ) WGproxy;;
+6 ) WGCFUP;;
+7 ) WARPun;;
+8 ) WARPtools;;
+9 ) UPwpyg;;
+10 ) WGCF;;
+11 ) WGCFv4wgcf;;
+12 ) WGCFv6wgcf;;
+0 ) exit;;
+esac
+}
+
+# ----------------- 修正：这里是 WARP 密钥升级函数 WGCFUP -----------------
+WGCFUP(){
+if [[ -n $(type -P wg-quick) ]]; then
+# wgcf 模式
+readp "按键许可证秘钥(26个字符):" ID
+[[ -n $ID ]] && wgcf set-license $ID >/dev/null 2>&1 || (red "未输入按键许可证秘钥(26个字符)" && exit)
+yellow "如提示Error: Too many devices.可能绑定设备已超过5台的限制或者密钥输入错误"
+wgcf update
+CheckWARPwgcf
+elif [[ -n $(type -P warp-go) ]]; then
+# warp-go 模式
+readp "按键许可证秘钥(26个字符):" ID
+[[ -n $ID ]] && sed -i "s#.*License.*#License = $ID#g" /usr/local/bin/warp.conf || (red "未输入按键许可证秘钥(26个字符)" && exit)
+yellow "如提示Error: Too many devices.可能绑定设备已超过5台的限制或者密钥输入错误"
+CheckWARP
+elif [[ $(systemctl is-active warp-svc) = active ]]; then
+# socks5 模式
+SOCKS5WARPUP
+else
+red "未安装任何WARP方案，无法升级"
+fi
+}
+# ----------------- 修正：WGCFUP 函数闭合 -----------------
+
+wgc1='sed -i "s#.*AllowedIPs.*#AllowedIPs = 0.0.0.0/0#g" /etc/wireguard/wgcf.conf'
+wgc2='sed -i "s#.*AllowedIPs.*#AllowedIPs = ::/0#g" /etc/wireguard/wgcf.conf'
+wgc3='sed -i "s#.*AllowedIPs.*#AllowedIPs = 0.0.0.0/0,::/0#g" /etc/wireguard/wgcf.conf'
+wgc6='sed -i "/\[Interface\]/a PostUp = ip -4 rule add from $(ip route get 162.159.192.1 | grep -oP "src \K\S+") lookup main\nPostDown = ip -4 rule delete from $(ip route get 162.159.192.1 | grep -oP "src \K\S+") lookup main\n" /etc/wireguard/wgcf.conf'
+wgc7='sed -i "/\[Interface\]/a PostUp = ip -6 rule add from $(ip route get 2606:4700:d0::a29f:c001 | grep -oP "src \K\S+") lookup main\nPostDown = ip -6 rule delete from $(ip route get 2606:4700:d0::a29f:c001 | grep -oP "src \K\S+") lookup main\n" /etc/wireguard/wgcf.conf'
+wgc8='sed -i "/\[Interface\]/a PostUp = ip -4 rule add from $(ip route get 162.159.192.1 | grep -oP "src \K\S+") lookup main\nPostDown = ip -4 rule delete from $(ip route get 162.159.192.1 | grep -oP "src \K\S+") lookup main\nPostUp = ip -6 rule add from $(ip route get 2606:4700:d0::a29f:c001 | grep -oP "src \K\S+") lookup main\nPostDown = ip -6 rule delete from $(ip route get 2606:4700:d0::a29f:c001 | grep -oP "src \K\S+") lookup main\n" /etc/wireguard/wgcf.conf'
+
+main
